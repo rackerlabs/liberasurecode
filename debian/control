@@ -9,8 +9,8 @@ Build-Depends: autoconf-archive,
                dh-autoreconf,
 Standards-Version: 3.9.3.1
 Homepage: https://bitbucket.org/tsg-/liberasurecode/
-Vcs-Git: git://anonscm.debian.org/openstack/liberasurecode.git
-#Vcs-Git: git://anonscm.debian.org/openstack/liberasurecode.git -b v1.0.7
+#Vcs-Git: git://anonscm.debian.org/openstack/liberasurecode.git
+Vcs-Git: git://anonscm.debian.org/openstack/liberasurecode.git -b v1.0.7
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/liberasurecode.git;a=summary
 
 Package: liberasurecode-dev
