@@ -29,9 +29,10 @@
 #ifndef _ERASURECODE_H_
 #define _ERASURECODE_H_
 
-#include "list.h"
 #include "erasurecode_stdinc.h"
 #include "erasurecode_version.h"
+
+#define EC_MAX_FRAGMENTS 32
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,12 +41,13 @@ extern "C" {
 /* =~=*=~==~=*=~==~=*=~= Supported EC backends =~=*=~==~=*=~==~=*=~==~=*=~== */
 
 typedef enum {
-    EC_BACKEND_NULL                 = 0,
-    EC_BACKEND_JERASURE_RS_VAND     = 1,
-    EC_BACKEND_JERASURE_RS_CAUCHY   = 2,
-    EC_BACKEND_FLAT_XOR_HD          = 3,
-    EC_BACKEND_ISA_L_RS_VAND        = 4,
-    EC_BACKEND_SHSS                 = 5,
+    EC_BACKEND_NULL                   = 0,
+    EC_BACKEND_JERASURE_RS_VAND       = 1,
+    EC_BACKEND_JERASURE_RS_CAUCHY     = 2,
+    EC_BACKEND_FLAT_XOR_HD            = 3,
+    EC_BACKEND_ISA_L_RS_VAND          = 4,
+    EC_BACKEND_SHSS                   = 5,
+    EC_BACKEND_LIBERASURECODE_RS_VAND = 6,
     EC_BACKENDS_MAX,
 } ec_backend_id_t;
 
@@ -89,6 +91,15 @@ struct ec_args {
 /* =~=*=~==~=*=~== liberasurecode frontend API functions =~=*=~==~=~=*=~==~= */
 
 /* liberasurecode frontend API functions */
+
+/**
+ * Checks if a given backend is available.
+ *
+ * @param backend_id - one of the supported backends.
+ *
+ * @returns 1 if a backend is available; 0 otherwise
+ */
+int liberasurecode_backend_available(const ec_backend_id_t backend_id);
 
 /**
  * Create a liberasurecode instance and return a descriptor 
@@ -245,19 +256,16 @@ int liberasurecode_fragments_needed(int desc,
 typedef struct __attribute__((__packed__))
 fragment_metadata
 {
-    uint32_t    idx;                /* 4 */
-    uint32_t    size;               /* 4 */
-    uint32_t    frag_backend_metadata_size;    /* 4 */
-    uint64_t    orig_data_size;     /* 8 */
-    uint8_t     chksum_type;        /* 1 */
+    uint32_t    idx;                                     /*  4 */
+    uint32_t    size;                                    /*  4 */
+    uint32_t    frag_backend_metadata_size;              /*  4 */
+    uint64_t    orig_data_size;                          /*  8 */
+    uint8_t     chksum_type;                             /*  1 */
     uint32_t    chksum[LIBERASURECODE_MAX_CHECKSUM_LEN]; /* 32 */
-    uint8_t     chksum_mismatch;    /* 1 */
-    uint8_t     backend_id;         /* 1 */
-    uint32_t    backend_version;    /* 4 */
+    uint8_t     chksum_mismatch;                         /*  1 */
+    uint8_t     backend_id;                              /*  1 */
+    uint32_t    backend_version;                         /*  4 */
 } fragment_metadata_t;
-
-#define FRAGSIZE_2_BLOCKSIZE(fragment_size) \
-    (fragment_size - sizeof(fragment_header_t))
 
 /**
  * Get opaque metadata for a fragment.  The metadata is opaque to the
@@ -299,6 +307,31 @@ int is_invalid_fragment(int desc, char *fragment);
  */
 int liberasurecode_verify_stripe_metadata(int desc,
         char **fragments, int num_fragments);
+
+/* ==~=*=~==~=*=~==~=*=~==~=*=~==~=*=~==~=*=~==~=*=~==~=*=~==~=*=~==~=*=~== */
+
+/**
+ * liberasurecode fragment header definition
+ *
+ * Prevent the compiler from padding this by using the __packed__ keyword
+ */
+
+#define LIBERASURECODE_FRAG_HEADER_MAGIC    0xb0c5ecc
+#define LIBERASURECODE_MAX_CHECKSUM_LEN     8   /* quad words */
+
+typedef struct __attribute__((__packed__)) fragment_header_s
+{
+    fragment_metadata_t meta;              /* 59 bytes */
+    uint32_t            magic;             /*  4 bytes */
+    uint32_t            libec_version;     /*  4 bytes */
+    uint32_t            metadata_chksum;   /*  4 bytes */
+    // We must be aligned to 16-byte boundaries
+    // So, size this array accordingly
+    uint8_t             aligned_padding[9];
+} fragment_header_t;
+
+#define FRAGSIZE_2_BLOCKSIZE(fragment_size) \
+    (fragment_size - sizeof(fragment_header_t))
 
 /* ==~=*=~===~=*=~==~=*=~== liberasurecode Helpers ==~*==~=*=~==~=~=*=~==~= */
 

@@ -1,24 +1,24 @@
 # Top-level liberasurecode automake configuration
-ACLOCAL_AMFLAGS = -I m4
-
 SUBDIRS = src test doc
 
-EXTRA_DIST = autogen.sh
+EXTRA_DIST = autogen.sh get_flags_from_cpuid.c
 
 INCLUDE = -I$(abs_top_builddir)/include \
 		  -I$(abs_top_builddir)/include/erasurecode \
 		  -I$(abs_top_builddir)/include/xor_codes
 
 AM_CPPFLAGS = $(CPPFLAGS) $(INCLUDE)
-AM_CPPFLAGS += -Werror
+AM_CPPFLAGS += -Werror -Wall
 
 AM_CFLAGS = -fPIC $(AM_CPPFLAGS) @GCOV_FLAGS@ -L/usr/local/lib
 
-include_HEADERS = \
+thisincludedir = $(includedir)/liberasurecode
+thisinclude_HEADERS = \
 	include/erasurecode/alg_sig.h \
 	include/erasurecode/erasurecode.h \
 	include/erasurecode/erasurecode_backend.h \
 	include/erasurecode/erasurecode_helpers.h \
+	include/erasurecode/erasurecode_helpers_ext.h \
 	include/erasurecode/erasurecode_log.h \
 	include/erasurecode/erasurecode_preprocessing.h \
 	include/erasurecode/erasurecode_postprocessing.h \
@@ -27,14 +27,30 @@ include_HEADERS = \
 	include/erasurecode/list.h \
 	include/xor_codes/xor_hd_code_defs.h \
 	include/xor_codes/xor_code.h \
-	include/config_liberasurecode.h
+	include/config_liberasurecode.h \
+	include/rs_vand/rs_galois.h \
+	include/rs_vand/liberasurecode_rs_vand.h
+
+pkgconfig_DATA = erasurecode-$(LIBERASURECODE_API_VERSION).pc
+
+install-exec-hook:
+	-(mkdir -p $(DESTDIR)$(includedir) && \
+	   cd $(DESTDIR)$(includedir) && \
+	   rm -f erasurecode.h erasurecode_version.h \
+	         erasurecode_stdinc.h erasurecode_helpers.h \
+	         config_liberasurecode.h && \
+	   $(LN_S) liberasurecode/erasurecode.h && \
+	   $(LN_S) liberasurecode/erasurecode_version.h && \
+	   $(LN_S) liberasurecode/erasurecode_stdinc.h && \
+	   $(LN_S) liberasurecode/erasurecode_helpers.h && \
+	   $(LN_S) liberasurecode/config_liberasurecode.h)
 
 test: check
 	$(eval SONAMES := $(shell find $(abs_top_builddir) -name '*.so'))
 	$(eval SODIRS := $(dir $(SONAMES)))
-	$(eval LD_LIBRARY_PATH := LD_LIBRARY_PATH="$(subst / ,/:,$(SODIRS))")
-	$(eval DYLD_LIBRARY_PATH := DYLD_LIBRARY_PATH="$(subst / ,/:,$(SODIRS))")
-	$(eval DYLD_FALLBACK_LIBRARY_PATH := DYLD_FALLBACK_LIBRARY_PATH="$(subst / ,/:,$(SODIRS))")
+	$(eval LD_LIBRARY_PATH := LD_LIBRARY_PATH="$(LD_LIBRARY_PATH):$(subst / ,/:,$(SODIRS))")
+	$(eval DYLD_LIBRARY_PATH := DYLD_LIBRARY_PATH="$(DYLD_LIBRARY_PATH):$(subst / ,/:,$(SODIRS))")
+	$(eval DYLD_FALLBACK_LIBRARY_PATH := DYLD_FALLBACK_LIBRARY_PATH=$(DYLD_FALLBACK_LIBRARY_PATH):"$(subst / ,/:,$(SODIRS))")
 	@$(LD_LIBRARY_PATH) $(DYLD_LIBRARY_PATH) $(DYLD_FALLBACK_LIBRARY_PATH) \
 		./test/liberasurecode_test
 	@$(LD_LIBRARY_PATH) $(DYLD_LIBRARY_PATH) $(DYLD_FALLBACK_LIBRARY_PATH) \

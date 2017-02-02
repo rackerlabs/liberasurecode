@@ -28,6 +28,7 @@
 
 #include "erasurecode_backend.h"
 #include "erasurecode_helpers.h"
+#include "erasurecode_helpers_ext.h"
 #include "erasurecode_stdinc.h"
 
 void add_fragment_metadata(ec_backend_t be, char *fragment,
@@ -46,6 +47,7 @@ void add_fragment_metadata(ec_backend_t be, char *fragment,
     if (add_chksum) {
         set_checksum(ct, fragment, blocksize);
     }
+    set_metadata_chksum(fragment);
 }
 
 int finalize_fragments_after_encode(ec_backend_t instance,

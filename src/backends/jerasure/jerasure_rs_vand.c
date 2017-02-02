@@ -32,6 +32,7 @@
 #include "erasurecode.h"
 #include "erasurecode_backend.h"
 #include "erasurecode_helpers.h"
+#include "erasurecode_helpers_ext.h"
 
 #define JERASURE_RS_VAND_LIB_MAJOR 2
 #define JERASURE_RS_VAND_LIB_MINOR 0
@@ -41,7 +42,7 @@
 #if defined(__MACOS__) || defined(__MACOSX__) || defined(__OSX__) || defined(__APPLE__)
 #define JERASURE_RS_VAND_SO_NAME "libJerasure.dylib"
 #else
-#define JERASURE_RS_VAND_SO_NAME "libJerasure.so"
+#define JERASURE_RS_VAND_SO_NAME "libJerasure.so.2"
 #endif
 
 /* Forward declarations */

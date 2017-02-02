@@ -33,6 +33,7 @@
 #include "erasurecode.h"
 #include "erasurecode_backend.h"
 #include "erasurecode_helpers.h"
+#include "erasurecode_helpers_ext.h"
 
 #define ISA_L_RS_VAND_LIB_MAJOR 2
 #define ISA_L_RS_VAND_LIB_MINOR 13
@@ -42,7 +43,7 @@
 #if defined(__MACOS__) || defined(__MACOSX__) || defined(__OSX__) || defined(__APPLE__)
 #define ISA_L_RS_VAND_SO_NAME "libisal.dylib"
 #else
-#define ISA_L_RS_VAND_SO_NAME "libisal.so"
+#define ISA_L_RS_VAND_SO_NAME "libisal.so.2"
 #endif
 
 /* Forward declarations */

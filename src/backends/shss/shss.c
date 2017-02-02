@@ -34,6 +34,7 @@
 
 #include "erasurecode.h"
 #include "erasurecode_helpers.h"
+#include "erasurecode_helpers_ext.h"
 #include "erasurecode_backend.h"
 
 /* Forward declarations */
@@ -64,7 +65,7 @@ struct shss_descriptor {
 #if defined(__MACOS__) || defined(__MACOSX__) || defined(__OSX__) || defined(__APPLE__)
 #define SHSS_SO_NAME "libshss.dylib"
 #else
-#define SHSS_SO_NAME "libshss.so"
+#define SHSS_SO_NAME "libshss.so.1"
 #endif
 #define DEFAULT_W 128
 #define METADATA 32

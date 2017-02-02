@@ -26,14 +26,18 @@
  * vi: set noai tw=79 ts=4 sw=4:
  */
 
+#include "assert.h"
 #include "list.h"
 #include "erasurecode.h"
 #include "erasurecode_backend.h"
 #include "erasurecode_helpers.h"
+#include "erasurecode_helpers_ext.h"
 #include "erasurecode_preprocessing.h"
 #include "erasurecode_postprocessing.h"
 #include "erasurecode_stdinc.h"
+
 #include "alg_sig.h"
+#include "erasurecode_log.h"
 
 /* =~=*=~==~=*=~==~=*=~= Supported EC backends =~=*=~==~=*=~==~=*=~==~=*=~== */
 
@@ -44,6 +48,7 @@ extern struct ec_backend_common backend_jerasure_rs_vand;
 extern struct ec_backend_common backend_jerasure_rs_cauchy;
 extern struct ec_backend_common backend_isa_l_rs_vand;
 extern struct ec_backend_common backend_shss;
+extern struct ec_backend_common backend_liberasurecode_rs_vand;
 
 ec_backend_t ec_backends_supported[] = {
     (ec_backend_t) &backend_null,
@@ -52,6 +57,7 @@ ec_backend_t ec_backends_supported[] = {
     (ec_backend_t) &backend_flat_xor_hd,
     (ec_backend_t) &backend_isa_l_rs_vand,
     (ec_backend_t) &backend_shss,
+    (ec_backend_t) &backend_liberasurecode_rs_vand,
     NULL,
 };
 
@@ -163,21 +169,12 @@ static void print_dlerror(const char *caller)
 }
 
 /* Generic dlopen/dlclose routines */
-int liberasurecode_backend_open(ec_backend_t instance)
+void* liberasurecode_backend_open(ec_backend_t instance)
 {
-    if (instance && NULL != instance->desc.backend_sohandle)
-        return 0;
-
+    if (NULL == instance)
+        return NULL;
     /* Use RTLD_LOCAL to avoid symbol collisions */
-    instance->desc.backend_sohandle = dlopen(instance->common.soname,
-                                             RTLD_LAZY | RTLD_LOCAL);
-    if (NULL == instance->desc.backend_sohandle) {
-        print_dlerror(__func__);
-        return -EBACKENDNOTAVAIL;
-    }
-
-    dlerror();    /* Clear any existing errors */
-    return 0;
+    return dlopen(instance->common.soname, RTLD_LAZY | RTLD_LOCAL);
 }
 
 int liberasurecode_backend_close(ec_backend_t instance)
@@ -197,7 +194,7 @@ int liberasurecode_backend_close(ec_backend_t instance)
 void __attribute__ ((constructor))
 liberasurecode_init(void) {
     /* init logging */
-    openlog("liberasurecode", LOG_PID | LOG_CONS | LOG_NDELAY | LOG_PERROR, LOG_USER);
+    openlog("liberasurecode", LOG_PID | LOG_CONS, LOG_USER);
 
     /* populate supported backends list as a string */
     {
@@ -221,6 +218,28 @@ liberasurecode_exit(void) {
 /* =~=*=~==~=*=~= liberasurecode frontend API implementation =~=*=~==~=*=~== */
 
 /**
+ * Checks if a given backend is available.
+ *
+ * @param backend_id - one of the supported backends.
+ *
+ * @returns 1 if a backend is available; 0 otherwise
+ */
+int liberasurecode_backend_available(const ec_backend_id_t backend_id) {
+    struct ec_backend backend;
+    if (backend_id >= EC_BACKENDS_MAX)
+        return 0;
+
+    backend.desc.backend_sohandle = liberasurecode_backend_open(
+            ec_backends_supported[backend_id]);
+    if (!backend.desc.backend_sohandle) {
+        return 0;
+    }
+
+    liberasurecode_backend_close(&backend);
+    return 1;
+}
+
+/**
  * Create a liberasurecode instance and return a descriptor
  * for use with EC operations (encode, decode, reconstruct)
  *
@@ -242,7 +261,6 @@ liberasurecode_exit(void) {
 int liberasurecode_instance_create(const ec_backend_id_t id,
                                    struct ec_args *args)
 {
-    int err = 0;
     ec_backend_t instance = NULL;
     struct ec_backend_args bargs;
     if (!args)
@@ -250,6 +268,12 @@ int liberasurecode_instance_create(const ec_backend_id_t id,
 
     if (id >= EC_BACKENDS_MAX)
         return -EBACKENDNOTSUPP;
+
+    if ((args->k + args->m) > EC_MAX_FRAGMENTS) {
+        log_error("Total number of fragments (k + m) must be less than %d\n",
+                  EC_MAX_FRAGMENTS);
+        return -EINVALIDPARAMS;
+    }
 
     /* Allocate memory for ec_backend instance */
     instance = calloc(1, sizeof(*instance));
@@ -263,11 +287,14 @@ int liberasurecode_instance_create(const ec_backend_id_t id,
 
     /* Open backend .so if not already open */
     /* .so handle is returned in instance->desc.backend_sohandle */
-    err = liberasurecode_backend_open(instance);
-    if (err < 0) {
-        /* ignore during init, return the same handle */
-        free(instance);
-        return err;
+    if (!instance->desc.backend_sohandle) {
+        instance->desc.backend_sohandle = liberasurecode_backend_open(instance);
+        if (!instance->desc.backend_sohandle) {
+            /* ignore during init, return the same handle */
+            print_dlerror(__func__);
+            free(instance);
+            return -EBACKENDNOTAVAIL;
+        }
     }
 
     /* Call private init() for the backend */
@@ -552,8 +579,20 @@ int liberasurecode_decode(int desc,
     m = instance->args.uargs.m;
 
     if (num_fragments < k) {
+        log_error("Not enough fragments to decode, got %d, need %d!",
+                  num_fragments, k);
         ret = -EINSUFFFRAGS;
         goto out;
+    }
+
+    for (i = 0; i < num_fragments; ++i) {
+        /* Verify metadata checksum */
+        if (is_invalid_fragment_header(
+                (fragment_header_t *) available_fragments[i])) {
+            log_error("Invalid fragment header information!");
+            ret = -EBADHEADER;
+            goto out;
+        }
     }
 
     if (instance->common.id != EC_BACKEND_SHSS) {
@@ -587,7 +626,7 @@ int liberasurecode_decode(int desc,
         goto out;
     }
 
-    missing_idxs = alloc_and_set_buffer(sizeof(char*) * k, -1);
+    missing_idxs = alloc_and_set_buffer(sizeof(char*) * (k + m), -1);
     if (NULL == missing_idxs) {
         log_error("Could not allocate missing_idxs buffer!");
         goto out;
@@ -727,6 +766,7 @@ int liberasurecode_reconstruct_fragment(int desc,
     char **parity = NULL;
     int *missing_idxs = NULL;
     char *fragment_ptr = NULL;
+    int is_destination_missing = 0;
     int k = -1;
     int m = -1;
     int i;
@@ -756,6 +796,16 @@ int liberasurecode_reconstruct_fragment(int desc,
     k = instance->args.uargs.k;
     m = instance->args.uargs.m;
 
+    for (i = 0; i < num_fragments; i++) {
+        /* Verify metadata checksum */
+        if (is_invalid_fragment_header(
+                (fragment_header_t *) available_fragments[i])) {
+            log_error("Invalid fragment header information!");
+            ret = -EBADHEADER;
+            goto out;
+        }
+    }
+
     /*
      * Allocate arrays for data, parity and missing_idxs
      */
@@ -771,7 +821,7 @@ int liberasurecode_reconstruct_fragment(int desc,
         goto out;
     }
 
-    missing_idxs = alloc_and_set_buffer(sizeof(int*) * k, -1);
+    missing_idxs = alloc_and_set_buffer(sizeof(int*) * (k + m), -1);
     if (NULL == missing_idxs) {
         log_error("Could not allocate missing_idxs buffer!");
         goto out;
@@ -787,6 +837,33 @@ int liberasurecode_reconstruct_fragment(int desc,
     if (ret < 0) {
         log_error("Could not properly partition the fragments!");
         goto out;
+    }
+
+    /*
+     * Odd corner-case: If the caller passes in a destination_idx that
+     * is also included in the available fragments list, we should *not*
+     * try to reconstruct.
+     *
+     * For now, we will log a warning and do nothing.  In the future, we
+     * should probably log and return an error.
+     *
+     */
+    i = 0;
+    while (missing_idxs[i] > -1) {
+        if (missing_idxs[i] == destination_idx) {
+            is_destination_missing = 1;
+        }
+        i++;
+    }
+
+    if (!is_destination_missing) {
+        if (destination_idx < k) {
+            fragment_ptr = data[destination_idx];
+        } else {
+            fragment_ptr = parity[destination_idx - k];
+        }
+        log_warn("Dest idx for reconstruction was supplied as available buffer!");
+        goto destination_available;
     }
 
     /*
@@ -831,6 +908,7 @@ int liberasurecode_reconstruct_fragment(int desc,
                           orig_data_size, blocksize, instance->args.uargs.ct,
                           set_chksum);
 
+destination_available:
     /*
      * Copy the reconstructed fragment to the output buffer
      *
@@ -949,6 +1027,14 @@ int liberasurecode_get_fragment_metadata(char *fragment,
         goto out;
     }
 
+    /* Verify metadata checksum */
+    if (is_invalid_fragment_header(
+            (fragment_header_t *) fragment)) {
+        log_error("Invalid fragment header information!");
+        ret = -EBADHEADER;
+        goto out;
+    }
+
     memcpy(fragment_metadata, fragment, sizeof(struct fragment_metadata));
     fragment_hdr = (fragment_header_t *) fragment;
     if (LIBERASURECODE_FRAG_HEADER_MAGIC != fragment_hdr->magic) {
@@ -982,14 +1068,54 @@ out:
     return ret;
 }
 
+int is_invalid_fragment_header(fragment_header_t *header)
+{
+    uint32_t *stored_csum = NULL, csum = 0;
+    assert (NULL != header);
+    if (header->libec_version < _VERSION(1,2,0))
+        /* no metadata checksum support */
+        return 0;
+    stored_csum = get_metadata_chksum((char *) header);
+    if (NULL == stored_csum)
+        return 1; /* can't verify, possibly crc32 call error */
+    csum = crc32(0, &header->meta, sizeof(fragment_metadata_t));
+    return (*stored_csum != csum);
+}
+
 int liberasurecode_verify_fragment_metadata(ec_backend_t be,
                                             fragment_metadata_t *md)
 {
+    int k = be->args.uargs.k;
+    int m = be->args.uargs.m;
+    if (md->idx < 0 || (md->idx > (k + m))) {
+        return 1;
+    }
     if (md->backend_id != be->common.id) {
         return 1;
     }
     if (!be->common.ops->is_compatible_with(md->backend_version))  {
         return 1;
+    }
+    return 0;
+}
+
+int is_invalid_fragment_metadata(int desc, fragment_metadata_t *fragment_metadata)
+{
+    ec_backend_t be = liberasurecode_backend_instance_get_by_desc(desc);
+    if (!be) {
+        log_error("Unable to verify fragment metadata: invalid backend id %d.",
+                desc);
+        return -EINVALIDPARAMS;
+    }
+    if (liberasurecode_verify_fragment_metadata(be,
+            fragment_metadata) != 0) {
+        return -EBADHEADER;
+    }
+    if (!be->common.ops->is_compatible_with(fragment_metadata->backend_version))  {
+        return -EBADHEADER;
+    }
+    if (fragment_metadata->chksum_mismatch == 1) {
+        return -EBADCHKSUM;
     }
     return 0;
 }
@@ -1009,37 +1135,14 @@ int is_invalid_fragment(int desc, char *fragment)
         return 1;
     }
     if (get_libec_version(fragment, &ver) != 0 ||
-            ver != LIBERASURECODE_VERSION) {
+            ver > LIBERASURECODE_VERSION) {
         return 1;
     }
-    if (liberasurecode_get_fragment_metadata(fragment,
-            &fragment_metadata) != 0) {
+    if (liberasurecode_get_fragment_metadata(fragment, &fragment_metadata) != 0) {
         return 1;
     }
-    if (liberasurecode_verify_fragment_metadata(be,
-            &fragment_metadata) != 0) {
+    if (is_invalid_fragment_metadata(desc, &fragment_metadata) != 0) {
         return 1;
-    }
-    return 0;
-}
-
-int is_valid_fragment_metadata(int desc, fragment_metadata_t *fragment_metadata)
-{
-    ec_backend_t be = liberasurecode_backend_instance_get_by_desc(desc);
-    if (!be) {
-        log_error("Unable to verify stripe metadata: invalid backend id %d.",
-                desc);
-        return -EINVALIDPARAMS;
-    }
-    if (liberasurecode_verify_fragment_metadata(be,
-            fragment_metadata) != 0) {
-        return -EBADHEADER;
-    }
-    if (!be->common.ops->is_compatible_with(fragment_metadata->backend_version))  {
-        return -EBADHEADER;
-    }
-    if (fragment_metadata->chksum_mismatch == 1) {
-        return -EBADCHKSUM;
     }
     return 0;
 }
@@ -1060,7 +1163,7 @@ int liberasurecode_verify_stripe_metadata(int desc,
 
     for (i = 0; i < num_fragments; i++) {
         fragment_metadata_t *fragment_metadata = (fragment_metadata_t*)fragments[i];
-        int ret = is_valid_fragment_metadata(desc, fragment_metadata);
+        int ret = is_invalid_fragment_metadata(desc, fragment_metadata);
         if (ret < 0) {
             return ret;
         }
