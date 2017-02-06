@@ -1,3 +1,10 @@
+liberasurecode (1.2.0-1) unstable; urgency=medium
+
+  * Release of 1.2.0
+  * Backporting by CloudFiles 
+
+ -- Marcelo Martins <marcelo.martins@rackspace.com>  Wed, 01 Jan 2017 17:15:00 +0000
+
 liberasurecode (1.0.7-1) unstable; urgency=medium
 
   * New upstream release.
