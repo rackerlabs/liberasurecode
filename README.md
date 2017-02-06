@@ -10,7 +10,7 @@ Highlights
 
  * Unified Erasure Coding interface for common storage workloads.
 
- * Pluggable Erasure Code backends - As of v1.1.x, liberasurecode supports the following backends:
+ * Pluggable Erasure Code backends - liberasurecode supports the following backends:
 
       - 'liberasurecode_rs_vand' - Native, software-only Erasure Coding implementation that supports a Reed-Solomon backend
       - 'Jerasure' - Erasure Coding library that supports Reed-Solomon, Cauchy backends [1]
@@ -20,11 +20,16 @@ Highlights
       - 'NULL' template backend implemented to help future backend writers
 
 
- * True 'plugin' architecture - liberasurecode uses Dynamically Loaded (DL) libraries to realize a true 'plugin' architecture.  This also allows one to build liberasurecode indepdendent of the Erasure Code backend libraries.
+ * True 'plugin' architecture - liberasurecode uses Dynamically Loaded (DL)
+   libraries to realize a true 'plugin' architecture.  This also allows one to
+   build liberasurecode indepdendent of the Erasure Code backend libraries.
 
- * Cross-platform - liberasurecode is known to work on Linux (Fedora/Debian flavors), Solaris, BSD and Darwin/Mac OS X.
+ * Cross-platform - liberasurecode is known to work on Linux (Fedora/Debian
+   flavors), Solaris, BSD and Darwin/Mac OS X.
 
- * Community support - Developed alongside Erasure Code authority Kevin Greenan, liberasurecode is an actively maintained open-source project with growing community involvement (Openstack Swift, Ceph, PyECLib, NTT Labs).
+ * Community support - Developed alongside Erasure Code authority Kevin
+   Greenan, liberasurecode is an actively maintained open-source project with
+   growing community involvement (Openstack Swift, Ceph, PyECLib, NTT Labs).
 
 ----
 
@@ -38,7 +43,7 @@ liberasurecode is distributed under the terms of the **BSD** license.
 Active Users
 ====================
 
- * PyECLib - Python EC library:  https://pypi.python.org/pypi/PyECLib
+ * PyECLib - Python EC library: https://github.com/openstack/pyeclib
  * Openstack Swift Object Store - https://wiki.openstack.org/wiki/Swift
 
 
@@ -420,4 +425,4 @@ References
 
  [3] Greenan, Kevin M et al, "Flat XOR-based erasure codes in storage systems", http://www.kaymgee.com/Kevin_Greenan/Publications_files/greenan-msst10.pdf
 
- [4] Kota Tsuyuzaki <tsuyuzaki.kota@lab.ntt.co.jp>, Ryuta Kon <kon.ryuta@po.ntts.co.jp>, "NTT SHSS Erasure Coding backend"
+ [4] Kota Tsuyuzaki <tsuyuzaki.kota@lab.ntt.co.jp>, "NTT SHSS Erasure Coding backend"

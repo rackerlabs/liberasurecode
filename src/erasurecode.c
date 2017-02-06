@@ -49,6 +49,7 @@ extern struct ec_backend_common backend_jerasure_rs_cauchy;
 extern struct ec_backend_common backend_isa_l_rs_vand;
 extern struct ec_backend_common backend_shss;
 extern struct ec_backend_common backend_liberasurecode_rs_vand;
+extern struct ec_backend_common backend_isa_l_rs_cauchy;
 
 ec_backend_t ec_backends_supported[] = {
     (ec_backend_t) &backend_null,
@@ -58,6 +59,7 @@ ec_backend_t ec_backends_supported[] = {
     (ec_backend_t) &backend_isa_l_rs_vand,
     (ec_backend_t) &backend_shss,
     (ec_backend_t) &backend_liberasurecode_rs_vand,
+    (ec_backend_t) &backend_isa_l_rs_cauchy,
     NULL,
 };
 
@@ -331,7 +333,7 @@ int liberasurecode_instance_destroy(int desc)
     /* dlclose() backend library */
     liberasurecode_backend_close(instance);
 
-    /* Remove instace from registry */
+    /* Remove instance from registry */
     rc = liberasurecode_backend_instance_unregister(instance);
     if (rc == 0) {
         free(instance);
@@ -812,18 +814,21 @@ int liberasurecode_reconstruct_fragment(int desc,
     data = alloc_zeroed_buffer(sizeof(char*) * k);
     if (NULL == data) {
         log_error("Could not allocate data buffer!");
+        ret = -ENOMEM;
         goto out;
     }
 
     parity = alloc_zeroed_buffer(sizeof(char*) * m);
     if (NULL == parity) {
         log_error("Could not allocate parity buffer!");
+        ret = -ENOMEM;
         goto out;
     }
 
     missing_idxs = alloc_and_set_buffer(sizeof(int*) * (k + m), -1);
     if (NULL == missing_idxs) {
         log_error("Could not allocate missing_idxs buffer!");
+        ret = -ENOMEM;
         goto out;
     }
 
@@ -1072,6 +1077,9 @@ int is_invalid_fragment_header(fragment_header_t *header)
 {
     uint32_t *stored_csum = NULL, csum = 0;
     assert (NULL != header);
+    if (header->libec_version == 0)
+        /* libec_version must be bigger than 0 */
+        return 1;
     if (header->libec_version < _VERSION(1,2,0))
         /* no metadata checksum support */
         return 0;
@@ -1087,7 +1095,7 @@ int liberasurecode_verify_fragment_metadata(ec_backend_t be,
 {
     int k = be->args.uargs.k;
     int m = be->args.uargs.m;
-    if (md->idx < 0 || (md->idx > (k + m))) {
+    if (md->idx > (k + m)) {
         return 1;
     }
     if (md->backend_id != be->common.id) {
@@ -1221,10 +1229,22 @@ int liberasurecode_get_fragment_size(int desc, int data_len)
 {
     ec_backend_t instance = liberasurecode_backend_instance_get_by_desc(desc);
     // TODO: Create a common function to calculate fragment size also for preprocessing
+    if (NULL == instance)
+        return -EBACKENDNOTAVAIL;
     int aligned_data_len = get_aligned_data_size(instance, data_len);
     int size = (aligned_data_len / instance->args.uargs.k) + instance->common.backend_metadata_size;
 
     return size;
+}
+
+
+/**
+ * This will return the liberasurecode version for the descriptor
+ */
+
+uint32_t liberasurecode_get_version()
+{
+    return LIBERASURECODE_VERSION;
 }
 
 /* ==~=*=~==~=*=~==~=*=~==~=*=~==~=* misc *=~==~=*=~==~=*=~==~=*=~==~=*=~== */
